@@ -16,5 +16,5 @@ The Great Home Loans LOS is a comprehensive console-based loan origination softw
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/loan-origination-software.git
+   git clone https://github.com/theharshitsuri/loan-origination-software.git
    cd loan-origination-software
