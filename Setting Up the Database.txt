@@ -1,0 +1,51 @@
+Here are the table schemas:
+CREATE TABLE Users(NMLS CHAR(7) PRIMARY KEY, fname VARCHAR(50), lname VARCHAR(50), email VARCHAR(80), phone CHAR(10), alerts VARCHAR(100), type VARCHAR(20), username VARCHAR(20), password VARCHAR(20));
+
+CREATE TABLE Borrowers(id INTEGER PRIMARY KEY, fname VARCHAR(50), lname VARCHAR(50), email VARCHAR(80), credit INTEGER, phone CHAR(10));
+
+CREATE TABLE Properties(id INTEGER PRIMARY KEY, value INTEGER, street VARCHAR(70), state CHAR(2), city VARCHAR(35), zip CHAR(5), taxes INTEGER, hoi INTEGER, hoa INTEGER);
+
+CREATE TABLE Loans(id INTEGER PRIMARY KEY, borrower INTEGER NOT NULL REFERENCES Borrowers, coborrower INTEGER REFERENCES Borrowers, officer VARCHAR(7) REFERENCES Users, processor VARCHAR(7) REFERENCES Users, underwriter VARCHAR(7) REFERENCES Users, closer VARCHAR(7) REFERENCES Users, status VARCHAR(15), type VARCHAR(15), appDate DATE, closeDate DATE, property INTEGER NOT NULL REFERENCES Properties, loanAmount INTEGER, rate NUMERIC(4,3), term INTEGER, loanEstimateSent BOOLEAN, closingDisclosureSent BOOLEAN);
+
+CREATE TABLE Liabilities(id INTEGER PRIMARY KEY, loan INTEGER REFERENCES Loans, creditor VARCHAR(50), descr VARCHAR(50), balance REAL, amount REAL, omitted BOOLEAN);
+
+CREATE TABLE Conditions(id INTEGER PRIMARY KEY, loan INTEGER REFERENCES Loans, descr VARCHAR(100), satisfied BOOLEAN);
+
+=======================================Load Tables============================================
+\copy Users FROM 'users.csv' WITH DELIMITER ',' CSV HEADER;
+\copy Borrowers FROM 'borrowers.csv' WITH DELIMITER ',' CSV HEADER;
+\copy Properties FROM 'properties.csv' WITH DELIMITER ',' CSV HEADER;
+\copy Loans FROM 'loans.csv' WITH DELIMITER ',' CSV HEADER;
+\copy Conditions FROM 'conditions.csv' WITH DELIMITER ',' CSV HEADER;
+\copy Liabilities FROM 'liabilities.csv' WITH DELIMITER ',' CSV HEADER;
+
+==============================================================================================
+Views:
+
+CREATE VIEW Stats AS SELECT U.NMLS, U.fname, U.lname, SUM(L.loanamount) AS volume, DATE_PART('year',L.closedate) AS year, DATE_PART('month',L.closedate) AS month FROM Users U JOIN Loans L ON U.NMLS = L.officer WHERE L.status = 'Closed' GROUP BY U.NMLS, DATE_PART('year',L.closedate), DATE_PART('month',L.closedate);
+
+CREATE VIEW LE_Info AS SELECT L.id, L.officer, B.lname, B.credit, B.income, P.value as property_value, P.street, L.loanamount as loan_amount, L.loanestimatesent FROM Loans L, Properties P, Borrowers B WHERE L.property = P.id AND L.borrower = B.id;
+
+==============================================================================================
+Stored Procedure and Trigger for LE:
+
+CREATE OR REPLACE FUNCTION trigger_LE_function()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE NOTICE 'Trigger was activated for LE_info';
+    -- Check if all six attributes are populated
+    IF NEW.lname IS NOT NULL AND NEW.credit IS NOT NULL AND NEW.income IS NOT NULL AND NEW.property_value IS NOT NULL
+        AND NEW.street IS NOT NULL AND NEW.loan_amount IS NOT NULL AND NEW.loanestimatesent = FALSE THEN
+        -- Update alerts attribute in the Loans table for the corresponding officer
+        UPDATE Users
+        SET alerts = 'LE Disclosure Triggered! Send LE for the ' || NEW.lname || ' loan'
+        WHERE nmls = NEW.officer;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_alerts_on_LE_trigger
+INSTEAD OF UPDATE ON LE_Info
+FOR EACH ROW
+EXECUTE FUNCTION trigger_LE_function();
